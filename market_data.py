@@ -14,7 +14,6 @@ TIMEFRAMES = {
     "1d": 86400,
 }
 PRODUCTS = ["BTC-USD", "ETH-USD", "SOL-USD"]
-
 COLUMNS = ["timestamp", "low", "high", "open", "close", "volume"]
 
 
@@ -23,7 +22,7 @@ class MarketDataError(RuntimeError):
 
 
 def fetch_candles(product_id: str, timeframe: str, limit: int = 250) -> pd.DataFrame:
-    """Fetch public OHLCV candles. No account or trading credentials are used."""
+    """Fetch completed public OHLCV candles. No credentials or account access are used."""
     if product_id not in PRODUCTS:
         raise ValueError(f"Unsupported product: {product_id}")
     if timeframe not in TIMEFRAMES:
@@ -31,9 +30,10 @@ def fetch_candles(product_id: str, timeframe: str, limit: int = 250) -> pd.DataF
     if not 30 <= limit <= 300:
         raise ValueError("limit must be between 30 and 300")
 
+    seconds = TIMEFRAMES[timeframe]
     url = f"{BASE_URL}/products/{product_id}/candles"
-    params = {"granularity": TIMEFRAMES[timeframe]}
-    headers = {"Accept": "application/json", "User-Agent": "CryptoMarketLab/0.1"}
+    params = {"granularity": seconds}
+    headers = {"Accept": "application/json", "User-Agent": "CryptoMarketLab/0.2"}
 
     try:
         response = requests.get(url, params=params, headers=headers, timeout=15)
@@ -45,18 +45,24 @@ def fetch_candles(product_id: str, timeframe: str, limit: int = 250) -> pd.DataF
     if not isinstance(payload, list) or not payload:
         raise MarketDataError("The data provider returned no candle data.")
 
-    frame = pd.DataFrame(payload, columns=COLUMNS)
-    frame["timestamp"] = pd.to_datetime(frame["timestamp"], unit="s", utc=True)
-    for column in COLUMNS[1:]:
-        frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    try:
+        frame = pd.DataFrame(payload, columns=COLUMNS)
+        frame["timestamp"] = pd.to_datetime(frame["timestamp"], unit="s", utc=True)
+        for column in COLUMNS[1:]:
+            frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    except (TypeError, ValueError, KeyError) as exc:
+        raise MarketDataError("The provider returned an unexpected candle format.") from exc
 
-    frame = (
-        frame.dropna()
-        .drop_duplicates(subset=["timestamp"])
-        .sort_values("timestamp")
-        .tail(limit)
-        .set_index("timestamp")
-    )
+    frame = frame.dropna().drop_duplicates(subset=["timestamp"]).sort_values("timestamp")
+    # Exclude the currently forming candle so pattern checks use completed candles only.
+    now = pd.Timestamp.now(tz="UTC")
+    frame = frame.loc[frame["timestamp"] + pd.to_timedelta(seconds, unit="s") <= now]
+    frame = frame.tail(limit).set_index("timestamp")
+
     if frame.empty:
-        raise MarketDataError("No valid candles were returned.")
+        raise MarketDataError("No completed, valid candles were returned.")
+    if (frame[["low", "high", "open", "close"]] <= 0).any().any():
+        raise MarketDataError("The provider returned invalid non-positive price values.")
+    if (frame["high"] < frame["low"]).any():
+        raise MarketDataError("The provider returned an invalid high/low range.")
     return frame
