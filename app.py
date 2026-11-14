@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 from analysis import compare_timeframes, educational_assessment, strategy_consensus_research
-from backtest import STRATEGIES, run_backtest, run_walk_forward
+from backtest import STRATEGIES, compare_strategy_history, run_backtest, run_walk_forward
 from market_data import MarketDataError, PRODUCTS, TIMEFRAMES, fetch_candles, fetch_candles_history
 
 st.set_page_config(page_title="Crypto Market Lab", page_icon="📊", layout="wide")
@@ -281,7 +281,45 @@ if strategy_snapshot and strategy_snapshot.get("asset") == product:
     st.warning("This is a research classification, not a buy/sell command or TP recommendation. Historical highs/lows are descriptive only. Counts are not calibrated probabilities, and multiple lenses can agree because they use overlapping market information.")
 
 st.divider()
-st.subheader("Long-range historical market context")
+
+
+st.divider()
+st.subheader("Automatic historical strategy selection")
+st.caption("The app compares five candidate rule sets using earlier candles, selects one by a predeclared training score, and then reports its performance on later untouched historical candles. It does not produce current trade directions or price targets.")
+with st.expander("Selection settings", expanded=False):
+    selection_fee = st.number_input("Comparison fee per position change (bps)", 0.0, 500.0, 10.0, 1.0, key="selection_fee")
+    selection_slippage = st.number_input("Comparison slippage per position change (bps)", 0.0, 500.0, 5.0, 1.0, key="selection_slippage")
+    selection_training = st.slider("Earlier-history training share", 0.60, 0.85, 0.70, 0.05, key="selection_training")
+if st.button("Select strongest historical strategy", type="primary", use_container_width=True):
+    try:
+        with st.spinner("Comparing five candidate strategies on the selected asset and timeframe..."):
+            st.session_state.strategy_tournament = compare_strategy_history(
+                frame, selection_fee, selection_slippage, selection_training
+            )
+            st.session_state.strategy_tournament_key = (product, timeframe, candle_count)
+    except ValueError as exc:
+        st.error(f"Strategy comparison could not be completed: {exc}")
+
+tournament = st.session_state.get("strategy_tournament")
+if tournament and st.session_state.get("strategy_tournament_key") == key:
+    st.markdown(f"### Historically selected candidate: {tournament['selected_historical_candidate']}")
+    st.caption(f"{tournament['training_periods']:,} earlier periods used for selection · {tournament['holdout_periods']:,} later periods reserved for evaluation")
+    st.write(f"**Selection rule:** {tournament['selection_basis']}")
+    st.markdown("**Candidate ranking (training history only)**")
+    st.dataframe(tournament["rankings"], use_container_width=True, hide_index=True)
+    st.markdown("**Untouched later-history results**")
+    holdout_rows = [
+        {"Strategy": name, **metrics}
+        for name, metrics in tournament["holdout_results"].items()
+    ]
+    st.dataframe(holdout_rows, use_container_width=True, hide_index=True)
+    chosen_test = tournament["holdout_results"][tournament["selected_historical_candidate"]]
+    st.write(f"**Selected candidate's later historical return:** {chosen_test['holdout_return_pct']:.2f}%")
+    st.write(f"**Buy-and-hold comparison over the same later period:** {chosen_test['holdout_buy_hold_pct']:.2f}%")
+    st.write(f"**Maximum historical drawdown:** {chosen_test['holdout_max_drawdown_pct']:.2f}%")
+    st.caption(f"Later evaluation window: {chosen_test['holdout_start']} to {chosen_test['holdout_end']}")
+    st.info(tournament["note"])
+\nst.subheader("Long-range historical market context")
 st.write("Load up to 5,000 completed daily candles for the selected asset. This gives a long-range view where the exchange has data; it does not guarantee 10–20 years of coverage.")
 if st.button("Load maximum available daily history"):
     try:
