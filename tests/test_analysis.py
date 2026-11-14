@@ -84,3 +84,27 @@ def test_assessment_is_not_a_probability():
     assert "score" in report
     assert "patterns" in report
     assert any("not statistically calibrated" in note for note in report["cautions"])
+
+
+def test_strategy_consensus_research_returns_transparent_lenses():
+    from analysis import strategy_consensus_research
+
+    values = np.linspace(100, 145, 100)
+    frame = pd.DataFrame({
+        "open": values - 0.15,
+        "high": values + 1,
+        "low": values - 1,
+        "close": values,
+        "volume": np.full(100, 1000.0),
+    })
+    result = strategy_consensus_research(frame)
+    assert result["overall"] in {
+        "Bullish evidence leads",
+        "Bearish evidence leads",
+        "Mixed / no clear consensus",
+    }
+    assert {"Trend structure", "RSI momentum", "MACD momentum", "Candlestick structure"} <= {
+        item["strategy"] for item in result["lenses"]
+    }
+    assert result["historical_range_context"]["lookback_candles"] == 50
+    assert "not probabilities" in result["note"]
