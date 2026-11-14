@@ -1,5 +1,6 @@
 """Streamlit UI for Crypto Market Lab. Educational research only."""
 
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
@@ -50,7 +51,7 @@ col1, col2, col3, col4 = st.columns(4)
 col1.metric("Latest close", f"${latest['close']:,.4f}")
 col2.metric(
     "RSI (14)",
-    "—" if pd_is_missing(latest["rsi_14"]) else f"{latest['rsi_14']:.1f}",
+    "—" if pd.isna(latest["rsi_14"]) else f"{latest['rsi_14']:.1f}",
 )
 col3.metric("Research assessment", report["label"])
 col4.metric("Evidence score", f"{report['score']:+d} / 3")
