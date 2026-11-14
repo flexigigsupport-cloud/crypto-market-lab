@@ -319,7 +319,8 @@ if tournament and st.session_state.get("strategy_tournament_key") == key:
     st.write(f"**Maximum historical drawdown:** {chosen_test['holdout_max_drawdown_pct']:.2f}%")
     st.caption(f"Later evaluation window: {chosen_test['holdout_start']} to {chosen_test['holdout_end']}")
     st.info(tournament["note"])
-\nst.subheader("Long-range historical market context")
+
+st.subheader("Long-range historical market context")
 st.write("Load up to 5,000 completed daily candles for the selected asset. This gives a long-range view where the exchange has data; it does not guarantee 10–20 years of coverage.")
 if st.button("Load maximum available daily history"):
     try:
