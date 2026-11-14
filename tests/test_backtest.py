@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import pytest
-from backtest import run_backtest, run_walk_forward
+from backtest import compare_strategy_history, run_backtest, run_walk_forward
 
 def sample_frame(length=1200):
     close = 100 + np.cumsum(np.sin(np.arange(length) / 5) * 0.4 + 0.12)
@@ -34,3 +34,24 @@ def test_invalid_backtest_inputs():
         run_backtest(frame, fee_bps=-1)
     with pytest.raises(ValueError):
         run_backtest(frame.iloc[::-1])
+
+
+
+def test_automatic_strategy_comparison_keeps_holdout_separate():
+    result = compare_strategy_history(sample_frame(1600))
+    assert result["selected_historical_candidate"] in {
+        "SMA trend filter",
+        "RSI momentum filter",
+        "MACD momentum filter",
+        "20-candle breakout filter",
+        "RSI mean-reversion filter",
+    }
+    assert len(result["rankings"]) == 5
+    assert result["holdout_periods"] > 0
+    assert set(result["holdout_results"]) == {row["strategy"] for row in result["rankings"]}
+    assert "not a current buy/sell recommendation" in result["note"]
+
+
+def test_strategy_comparison_rejects_invalid_training_share():
+    with pytest.raises(ValueError):
+        compare_strategy_history(sample_frame(), training_fraction=0.5)
