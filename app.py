@@ -122,17 +122,13 @@ if comparison:
     st.caption(result["note"])
     st.dataframe([{"Timeframe": name, "Assessment": item["label"], "Score": item["score"], "Patterns": ", ".join(item["patterns"])} for name, item in result["reports"].items()], use_container_width=True, hide_index=True)
 
-
 st.divider()
 st.subheader("One-click market research")
 st.caption("Creates an educational snapshot from the five available timeframes. It ranks the direction of the evidence; it does not issue a buy/sell instruction or calculate a validated probability.")
 if st.button("Analyse market now", type="primary", use_container_width=True):
     try:
         with st.spinner("Comparing completed candles across all five timeframes..."):
-            snapshot_frames = {
-                name: fetch_candles(product, name, 120)
-                for name in TIMEFRAMES
-            }
+            snapshot_frames = {name: fetch_candles(product, name, 120) for name in TIMEFRAMES}
             snapshot = compare_timeframes(snapshot_frames)
             reports = snapshot["reports"]
             total_score = sum(item["score"] for item in reports.values())
@@ -154,10 +150,7 @@ if st.button("Analyse market now", type="primary", use_container_width=True):
                 "bearish_timeframes": bearish_count,
                 "mixed_timeframes": snapshot["mixed_count"],
                 "strongest_timeframe": strongest[0],
-                "timeframe_results": ", ".join(
-                    f"{name}: {item['label']} ({item['score']:+d})"
-                    for name, item in reports.items()
-                ),
+                "timeframe_results": ", ".join(f"{name}: {item['label']} ({item['score']:+d})" for name, item in reports.items()),
             }
             history = st.session_state.get("assessment_history", [])
             history.insert(0, record)
@@ -177,10 +170,7 @@ if st.session_state.get("latest_snapshot"):
     c.metric("Bearish timeframes", str(record["bearish_timeframes"]))
     d.metric("Mixed timeframes", str(record["mixed_timeframes"]))
     st.caption(f"Strongest single-timeframe evidence: {record['strongest_timeframe']} · Checked {record['checked_at']}")
-    st.dataframe([
-        {"Timeframe": name, "Assessment": item["label"], "Evidence score": item["score"], "Patterns": ", ".join(item["patterns"])}
-        for name, item in reports.items()
-    ], use_container_width=True, hide_index=True)
+    st.dataframe([{"Timeframe": name, "Assessment": item["label"], "Evidence score": item["score"], "Patterns": ", ".join(item["patterns"])} for name, item in reports.items()], use_container_width=True, hide_index=True)
     st.info(snapshot["note"])
     st.warning("The combined score is a simple count of indicator agreement, not a probability of a profitable outcome. Do not use it as an instruction to buy, sell or use leverage.")
 
@@ -188,6 +178,43 @@ if st.session_state.get("assessment_history"):
     st.subheader("Last 20 assessment records")
     st.dataframe(st.session_state.assessment_history, use_container_width=True, hide_index=True)
     st.caption("These records are kept in this app session. They are not permanently stored and may reset when the app restarts.")
+
+st.divider()
+st.subheader("Final research conclusion")
+st.caption("A consolidated interpretation of the selected asset's latest real Coinbase candles. This is descriptive research, not a forecast or trading instruction.")
+final_reports = st.session_state.get("latest_snapshot", {}).get("reports")
+if final_reports and st.session_state.get("latest_snapshot_asset") == product:
+    conclusion_reports = final_reports
+    conclusion_label = st.session_state.latest_snapshot["overall"]
+    conclusion_source = "Five-timeframe snapshot"
+else:
+    conclusion_reports = {timeframe: report}
+    conclusion_label = report["label"]
+    conclusion_source = f"Selected chart timeframe ({timeframe}) only"
+
+bullish_total = sum(item["label"] == "Bullish evidence" for item in conclusion_reports.values())
+bearish_total = sum(item["label"] == "Bearish evidence" for item in conclusion_reports.values())
+mixed_total = len(conclusion_reports) - bullish_total - bearish_total
+if bullish_total > bearish_total and mixed_total == 0:
+    final_wording = "Bullish indicator evidence is aligned across the reports available. This describes the observed candles; it does not establish that prices will rise."
+elif bearish_total > bullish_total and mixed_total == 0:
+    final_wording = "Bearish indicator evidence is aligned across the reports available. This describes the observed candles; it does not establish that prices will fall."
+elif bullish_total > bearish_total:
+    final_wording = "Bullish evidence is more common, but at least one timeframe is mixed or disagrees. The overall picture is not fully aligned."
+elif bearish_total > bullish_total:
+    final_wording = "Bearish evidence is more common, but at least one timeframe is mixed or disagrees. The overall picture is not fully aligned."
+else:
+    final_wording = "The available indicators do not establish a clear directional consensus. Treat the current picture as mixed or inconclusive."
+
+st.markdown(f"**Asset:** {product}  \n**Data source:** Coinbase Exchange public candles  \n**Conclusion basis:** {conclusion_source}  \n**Latest completed candle:** {frame.index[-1].strftime('%Y-%m-%d %H:%M UTC')}")
+st.markdown(f"**Final conclusion:** {final_wording}")
+st.write(f"**Timeframe count:** {bullish_total} bullish · {bearish_total} bearish · {mixed_total} mixed")
+st.write("**Current-chart evidence:** " + ("; ".join(report["evidence"]) if report["evidence"] else "No decisive indicator evidence on the selected timeframe."))
+st.write("**Latest candle observations:** " + "; ".join(report["patterns"]))
+if pd.notna(latest["atr_14"]) and latest["close"]:
+    st.write(f"**Recent volatility context:** ATR(14) is {latest['atr_14']:.6g} price units, approximately {latest['atr_14'] / latest['close'] * 100:.2f}% of the latest close. ATR measures recent movement; it does not set a safe target or predict direction.")
+st.write("**Take-profit (TP):** Not generated. A target intended to guide a real trade would be an actionable trading instruction, and these uncalibrated indicators cannot justify one. For research, use the historical simulation results below to study how past price paths behaved under explicit, retrospective assumptions.")
+st.caption("Limitations: indicator thresholds are simple and uncalibrated; candle patterns are context-dependent; timeframes are not independent evidence; fees, slippage, liquidity and exchange differences can change historical results. No probability of success is implied.")
 
 st.divider()
 st.subheader("Long-range historical market context")
