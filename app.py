@@ -6,17 +6,11 @@ import streamlit as st
 
 from analysis import compare_timeframes, educational_assessment
 from backtest import STRATEGIES, run_backtest
-from market_data import (
-    MarketDataError,
-    PRODUCTS,
-    TIMEFRAMES,
-    fetch_candles,
-)
+from market_data import MarketDataError, PRODUCTS, TIMEFRAMES, fetch_candles
 
 st.set_page_config(page_title="Crypto Market Lab", page_icon="📊", layout="wide")
 st.title("Crypto Market Lab")
 st.caption("Public crypto market data • Candlestick research • Multi-timeframe comparison")
-
 st.warning(
     "Educational research and historical simulation only. Assessments are uncertain "
     "summaries, not buy/sell instructions. No trading accounts or order execution are connected."
@@ -26,7 +20,7 @@ with st.sidebar:
     st.header("Market")
     product = st.selectbox("Asset", PRODUCTS)
     timeframe = st.selectbox("Main chart timeframe", list(TIMEFRAMES.keys()), index=1)
-    candle_count = st.slider("Candles to load", min_value=50, max_value=300, value=200, step=25)
+    candle_count = st.slider("Candles to load", min_value=100, max_value=300, value=250, step=25)
     refresh = st.button("Refresh market data", type="primary")
 
 if "market_frame" not in st.session_state:
@@ -86,32 +80,38 @@ st.line_chart(indicators[["macd", "macd_signal"]].dropna(), height=180)
 st.line_chart(indicators[["atr_14"]].dropna(), height=150)
 
 st.divider()
-st.subheader("Historical paper backtest")
+st.subheader("Chronological holdout paper backtest")
 st.write(
-    "This section replays simple, predefined research rules on the candles loaded above. "
-    "It uses close-to-next-candle returns and deducts the assumed costs below. "
-    "It does not create live alerts or trading instructions."
+    "The simulator uses earlier candles to warm up indicators, then reports results only "
+    "on the later holdout segment. Signals apply to the following candle. This is a "
+    "basic chronological holdout—not repeated walk-forward validation."
 )
 with st.expander("Simulation assumptions", expanded=True):
     chosen_strategy = st.selectbox("Research rule", list(STRATEGIES.keys()))
+    test_fraction = st.slider("Final holdout share", min_value=0.1, max_value=0.5, value=0.3, step=0.05)
     fee_bps = st.number_input("Assumed fee per position change (basis points)", min_value=0.0, max_value=500.0, value=10.0, step=1.0)
     slippage_bps = st.number_input("Assumed slippage per position change (basis points)", min_value=0.0, max_value=500.0, value=5.0, step=1.0)
-    run_simulation = st.button("Run historical simulation")
+    run_simulation = st.button("Run holdout simulation")
 
 if run_simulation:
     try:
         st.session_state.backtest_result = run_backtest(
-            frame, strategy=chosen_strategy, fee_bps=fee_bps, slippage_bps=slippage_bps
+            frame, strategy=chosen_strategy, fee_bps=fee_bps,
+            slippage_bps=slippage_bps, test_fraction=test_fraction,
         )
     except ValueError as exc:
         st.error(str(exc))
 
 backtest_result = st.session_state.get("backtest_result")
 if backtest_result:
-    st.caption(f"Last simulation: {backtest_result['strategy']} · {backtest_result['candles_tested']} return periods")
+    st.caption(
+        f"{backtest_result['strategy']} · {backtest_result['training_periods']} earlier "
+        f"periods excluded · {backtest_result['candles_tested']} holdout periods · "
+        f"{backtest_result['test_start']} to {backtest_result['test_end']}"
+    )
     metrics = st.columns(4)
-    metrics[0].metric("Simulated return", f"{backtest_result['total_return_pct']:.2f}%")
-    metrics[1].metric("Buy-and-hold comparison", f"{backtest_result['buy_hold_return_pct']:.2f}%")
+    metrics[0].metric("Holdout return", f"{backtest_result['total_return_pct']:.2f}%")
+    metrics[1].metric("Holdout buy-and-hold", f"{backtest_result['buy_hold_return_pct']:.2f}%")
     metrics[2].metric("Maximum drawdown", f"{backtest_result['max_drawdown_pct']:.2f}%")
     metrics[3].metric("Position changes", str(backtest_result["position_changes"]))
     st.line_chart(backtest_result["equity_curve"], height=280)
@@ -123,17 +123,13 @@ if backtest_result:
     })
     st.info(backtest_result["note"])
     st.warning(
-        "A favourable historical result can be caused by chance, overfitting or the selected "
-        "date range. This small sample is not an out-of-sample validation and says nothing "
-        "reliable about future performance."
+        "A single holdout can still be misleading, especially with a small dataset. "
+        "Do not treat a favourable result as evidence that the rule will work in future markets."
     )
 
 st.divider()
 st.subheader("Multi-timeframe research")
-st.write(
-    "Compare the same asset across 5m, 15m, 1h, 6h and 1d. "
-    "The comparison reports agreement and disagreement; it does not issue trade instructions."
-)
+st.write("Compare the same asset across 5m, 15m, 1h, 6h and 1d. Agreement is not certainty.")
 if st.button("Compare all timeframes"):
     timeframe_frames = {}
     try:
@@ -149,10 +145,8 @@ if comparison:
     st.metric("Overall timeframe picture", comparison["overall"])
     st.caption(comparison["note"])
     rows = [{
-        "Timeframe": name,
-        "Assessment": item["label"],
-        "Evidence score": item["score"],
-        "Latest patterns": ", ".join(item["patterns"]),
+        "Timeframe": name, "Assessment": item["label"],
+        "Evidence score": item["score"], "Latest patterns": ", ".join(item["patterns"]),
     } for name, item in comparison["reports"].items()]
     st.dataframe(rows, use_container_width=True, hide_index=True)
 
