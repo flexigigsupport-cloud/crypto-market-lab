@@ -3,12 +3,17 @@
 import plotly.graph_objects as go
 import streamlit as st
 
-from analysis import educational_assessment
-from market_data import MarketDataError, PRODUCTS, TIMEFRAMES, fetch_candles
+from analysis import compare_timeframes, educational_assessment
+from market_data import (
+    MarketDataError,
+    PRODUCTS,
+    TIMEFRAMES,
+    fetch_candles,
+)
 
 st.set_page_config(page_title="Crypto Market Lab", page_icon="📊", layout="wide")
 st.title("Crypto Market Lab")
-st.caption("Live public market data • Candlestick research • Multi-timeframe groundwork")
+st.caption("Public crypto market data • Candlestick research • Multi-timeframe comparison")
 
 st.warning(
     "Educational research only. Assessments are uncertain summaries, not buy/sell "
@@ -18,7 +23,7 @@ st.warning(
 with st.sidebar:
     st.header("Market")
     product = st.selectbox("Asset", PRODUCTS)
-    timeframe = st.selectbox("Timeframe", list(TIMEFRAMES.keys()), index=1)
+    timeframe = st.selectbox("Main chart timeframe", list(TIMEFRAMES.keys()), index=1)
     candle_count = st.slider("Candles to load", min_value=50, max_value=300, value=200, step=25)
     refresh = st.button("Refresh market data", type="primary")
 
@@ -28,7 +33,7 @@ if "market_frame" not in st.session_state:
 
 key = (product, timeframe, candle_count)
 if refresh or st.session_state.market_frame is None or st.session_state.market_key != key:
-    with st.spinner("Retrieving public candle data..."):
+    with st.spinner("Retrieving completed public candles..."):
         try:
             st.session_state.market_frame = fetch_candles(product, timeframe, candle_count)
             st.session_state.market_key = key
@@ -43,7 +48,10 @@ latest = indicators.iloc[-1]
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Latest close", f"${latest['close']:,.4f}")
-col2.metric("RSI (14)", "—" if latest["rsi_14"] != latest["rsi_14"] else f"{latest['rsi_14']:.1f}")
+col2.metric(
+    "RSI (14)",
+    "—" if pd_is_missing(latest["rsi_14"]) else f"{latest['rsi_14']:.1f}",
+)
 col3.metric("Research assessment", report["label"])
 col4.metric("Evidence score", f"{report['score']:+d} / 3")
 
@@ -77,11 +85,43 @@ with right:
     for item in report["cautions"]:
         st.caption(f"Note: {item}")
 
-st.subheader("RSI and MACD")
+st.subheader("RSI, MACD and ATR")
 st.line_chart(indicators[["rsi_14"]].dropna(), height=180)
 st.line_chart(indicators[["macd", "macd_signal"]].dropna(), height=180)
+st.line_chart(indicators[["atr_14"]].dropna(), height=150)
+
+st.divider()
+st.subheader("Multi-timeframe research")
+st.write(
+    "Compare the same asset across 5m, 15m, 1h, 6h and 1d. "
+    "The comparison reports agreement and disagreement; it does not issue trade instructions."
+)
+if st.button("Compare all timeframes"):
+    timeframe_frames = {}
+    try:
+        with st.spinner("Loading each timeframe..."):
+            for name in TIMEFRAMES:
+                timeframe_frames[name] = fetch_candles(product, name, 120)
+        comparison = compare_timeframes(timeframe_frames)
+        st.session_state.timeframe_comparison = comparison
+    except (MarketDataError, ValueError) as exc:
+        st.error(f"Could not complete timeframe comparison: {exc}")
+
+comparison = st.session_state.get("timeframe_comparison")
+if comparison:
+    st.metric("Overall timeframe picture", comparison["overall"])
+    st.caption(comparison["note"])
+    rows = []
+    for name, item in comparison["reports"].items():
+        rows.append({
+            "Timeframe": name,
+            "Assessment": item["label"],
+            "Evidence score": item["score"],
+            "Latest patterns": ", ".join(item["patterns"]),
+        })
+    st.dataframe(rows, use_container_width=True, hide_index=True)
 
 st.caption(
-    f"Last candle timestamp: {frame.index[-1].strftime('%Y-%m-%d %H:%M UTC')} · "
-    "Data is supplied by Coinbase Exchange public market-data endpoints."
+    f"Last completed candle: {frame.index[-1].strftime('%Y-%m-%d %H:%M UTC')} · "
+    "Source: Coinbase Exchange public market-data endpoint."
 )
