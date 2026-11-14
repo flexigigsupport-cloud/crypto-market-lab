@@ -2,7 +2,7 @@
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from analysis import compare_timeframes, educational_assessment
+from analysis import compare_timeframes, educational_assessment, strategy_consensus_research
 from backtest import STRATEGIES, run_backtest, run_walk_forward
 from market_data import MarketDataError, PRODUCTS, TIMEFRAMES, fetch_candles, fetch_candles_history
 
@@ -215,6 +215,70 @@ if pd.notna(latest["atr_14"]) and latest["close"]:
     st.write(f"**Recent volatility context:** ATR(14) is {latest['atr_14']:.6g} price units, approximately {latest['atr_14'] / latest['close'] * 100:.2f}% of the latest close. ATR measures recent movement; it does not set a safe target or predict direction.")
 st.write("**Take-profit (TP):** Not generated. A target intended to guide a real trade would be an actionable trading instruction, and these uncalibrated indicators cannot justify one. For research, use the historical simulation results below to study how past price paths behaved under explicit, retrospective assumptions.")
 st.caption("Limitations: indicator thresholds are simple and uncalibrated; candle patterns are context-dependent; timeframes are not independent evidence; fees, slippage, liquidity and exchange differences can change historical results. No probability of success is implied.")
+
+
+st.divider()
+st.subheader("Multi-strategy research engine")
+st.caption("Runs several descriptive research lenses on fresh, completed Coinbase candles across all five timeframes. It does not generate orders, entry instructions, take-profit targets or execution signals.")
+if st.button("Run multi-strategy research", type="primary", use_container_width=True):
+    try:
+        with st.spinner("Running trend, momentum, candle, volume and volatility research across five timeframes..."):
+            strategy_results = {}
+            for name in TIMEFRAMES:
+                research_frame = fetch_candles(product, name, 180)
+                strategy_results[name] = strategy_consensus_research(research_frame)
+            st.session_state.strategy_research = {
+                "asset": product,
+                "checked_at": pd.Timestamp.now(tz="UTC").strftime("%Y-%m-%d %H:%M UTC"),
+                "results": strategy_results,
+            }
+    except (MarketDataError, ValueError) as exc:
+        st.error(f"Multi-strategy analysis could not be completed: {exc}")
+
+strategy_snapshot = st.session_state.get("strategy_research")
+if strategy_snapshot and strategy_snapshot.get("asset") == product:
+    strategy_results = strategy_snapshot["results"]
+    bullish_tf = sum(item["overall"] == "Bullish evidence leads" for item in strategy_results.values())
+    bearish_tf = sum(item["overall"] == "Bearish evidence leads" for item in strategy_results.values())
+    if bullish_tf > bearish_tf and bullish_tf >= 2:
+        st.markdown("### Bullish evidence leads across the timeframe research")
+    elif bearish_tf > bullish_tf and bearish_tf >= 2:
+        st.markdown("### Bearish evidence leads across the timeframe research")
+    else:
+        st.markdown("### Mixed evidence — no clear multi-timeframe consensus")
+    st.caption(f"Asset: {product} · Completed: {strategy_snapshot['checked_at']} · {bullish_tf} bullish timeframe assessments · {bearish_tf} bearish · {5 - bullish_tf - bearish_tf} mixed")
+    summary_rows = []
+    detail_rows = []
+    range_rows = []
+    for name, result in strategy_results.items():
+        summary_rows.append({
+            "Timeframe": name,
+            "Overall research": result["overall"],
+            "Bullish lenses": result["bullish_lenses"],
+            "Bearish lenses": result["bearish_lenses"],
+            "Neutral lenses": result["neutral_lenses"],
+        })
+        for lens in result["lenses"]:
+            detail_rows.append({
+                "Timeframe": name,
+                "Research lens": lens["strategy"],
+                "Evidence classification": lens["bias"],
+                "Explanation": lens["reason"],
+            })
+        observed = result["historical_range_context"]
+        range_rows.append({
+            "Timeframe": name,
+            "50-candle observed low": observed["observed_low"],
+            "50-candle observed high": observed["observed_high"],
+            "Latest close": observed["latest_close"],
+        })
+    st.dataframe(summary_rows, use_container_width=True, hide_index=True)
+    st.markdown("**Strategy-by-strategy reasoning**")
+    st.dataframe(detail_rows, use_container_width=True, hide_index=True)
+    st.markdown("**Recent historical range context (not price targets)**")
+    st.dataframe(range_rows, use_container_width=True, hide_index=True)
+    st.info(strategy_results["1h"]["note"])
+    st.warning("This is a research classification, not a buy/sell command or TP recommendation. Historical highs/lows are descriptive only. Counts are not calibrated probabilities, and multiple lenses can agree because they use overlapping market information.")
 
 st.divider()
 st.subheader("Long-range historical market context")
