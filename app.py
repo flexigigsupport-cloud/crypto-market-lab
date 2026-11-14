@@ -183,7 +183,7 @@ st.divider()
 st.subheader("Final research conclusion")
 st.caption("A consolidated interpretation of the selected asset's latest real Coinbase candles. This is descriptive research, not a forecast or trading instruction.")
 final_reports = st.session_state.get("latest_snapshot", {}).get("reports")
-if final_reports and st.session_state.get("latest_snapshot_asset") == product:
+if final_reports and st.session_state.get("assessment_history") and st.session_state.assessment_history[0].get("asset") == product:
     conclusion_reports = final_reports
     conclusion_label = st.session_state.latest_snapshot["overall"]
     conclusion_source = "Five-timeframe snapshot"
