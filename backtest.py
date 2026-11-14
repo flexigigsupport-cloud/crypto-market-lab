@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from analysis import add_indicators
 
-STRATEGIES = {"SMA trend filter": "sma", "RSI momentum filter": "rsi"}
+STRATEGIES = {\n    "SMA trend filter": "sma",\n    "RSI momentum filter": "rsi",\n    "MACD momentum filter": "macd",\n    "20-candle breakout filter": "breakout",\n    "RSI mean-reversion filter": "mean_reversion",\n}
 
 
 def _prepare(frame, strategy):
@@ -20,11 +20,23 @@ def _prepare(frame, strategy):
     if not frame.index.is_monotonic_increasing or frame.index.has_duplicates:
         raise ValueError("Candles must be oldest-to-newest with unique timestamps.")
     data = add_indicators(frame).copy()
-    if STRATEGIES[strategy] == "sma":
+    rule = STRATEGIES[strategy]
+    if rule == "sma":
         signal = (data["sma_20"] > data["sma_50"]).astype(float)
         signal[data["sma_20"].isna() | data["sma_50"].isna()] = np.nan
-    else:
+    elif rule == "rsi":
         signal = (data["rsi_14"] > 50).astype(float)
+        signal[data["rsi_14"].isna()] = np.nan
+    elif rule == "macd":
+        signal = (data["macd"] > data["macd_signal"]).astype(float)
+        signal[data["macd"].isna() | data["macd_signal"].isna()] = np.nan
+    elif rule == "breakout":
+        prior_high = data["high"].shift(1).rolling(20).max()
+        signal = (data["close"] > prior_high).astype(float)
+        signal[prior_high.isna()] = np.nan
+    else:
+        # Historical mean-reversion experiment: remain flat except at low RSI.
+        signal = (data["rsi_14"] < 35).astype(float)
         signal[data["rsi_14"].isna()] = np.nan
     data["position"] = signal.shift(1)
     data["market_return"] = data["close"].pct_change()
@@ -114,3 +126,63 @@ def run_walk_forward(frame, strategy="SMA trend filter", fee_bps=10.0,
         "note": "Sequential walk-forward evaluation of a fixed rule; not a forecast or guarantee.",
     })
     return result
+
+
+
+def compare_strategy_history(frame, fee_bps=10.0, slippage_bps=5.0,
+                             training_fraction=0.70):
+    """Select a candidate using training history, then report untouched later holdout.
+
+    This is a retrospective model-selection experiment, not a current market call.
+    """
+    if fee_bps < 0 or slippage_bps < 0:
+        raise ValueError("Costs cannot be negative.")
+    if not 0.60 <= training_fraction <= 0.85:
+        raise ValueError("training_fraction must be between 0.60 and 0.85.")
+
+    prepared = {name: _prepare(frame, name) for name in STRATEGIES}
+    common_index = prepared[next(iter(prepared))].index
+    for data in prepared.values():
+        common_index = common_index.intersection(data.index)
+    if len(common_index) < 100:
+        raise ValueError("Not enough common valid periods to compare all candidate strategies.")
+    split = int(len(common_index) * training_fraction)
+    if split < 40 or len(common_index) - split < 30:
+        raise ValueError("Load more history to provide adequate training and holdout periods.")
+
+    rankings = []
+    holdout_results = {}
+    for name, data in prepared.items():
+        data = data.loc[common_index].copy()
+        train = _metrics(data.iloc[:split].copy(), fee_bps, slippage_bps)
+        test = _metrics(data.iloc[split:].copy(), fee_bps, slippage_bps)
+        # Penalise deep training drawdowns; selection is made without looking at holdout.
+        selection_score = train["total_return_pct"] - 0.5 * abs(train["max_drawdown_pct"])
+        rankings.append({
+            "strategy": name,
+            "training_return_pct": train["total_return_pct"],
+            "training_max_drawdown_pct": train["max_drawdown_pct"],
+            "training_positive_periods_pct": train["positive_periods_pct"],
+            "training_selection_score": selection_score,
+        })
+        holdout_results[name] = {
+            "holdout_return_pct": test["total_return_pct"],
+            "holdout_buy_hold_pct": test["buy_hold_return_pct"],
+            "holdout_max_drawdown_pct": test["max_drawdown_pct"],
+            "holdout_positive_periods_pct": test["positive_periods_pct"],
+            "holdout_periods": test["candles_tested"],
+            "holdout_start": str(data.index[split]),
+            "holdout_end": str(data.index[-1]),
+        }
+
+    rankings.sort(key=lambda row: row["training_selection_score"], reverse=True)
+    selected = rankings[0]["strategy"]
+    return {
+        "selected_historical_candidate": selected,
+        "selection_basis": "Highest training return minus a 0.5× absolute maximum-drawdown penalty.",
+        "training_periods": split,
+        "holdout_periods": len(common_index) - split,
+        "rankings": rankings,
+        "holdout_results": holdout_results,
+        "note": "The selected candidate is chosen using earlier history only. Later holdout results are reported separately and are not used to select it. This is a retrospective comparison, not a current buy/sell recommendation or evidence of future profitability.",
+    }
