@@ -4,7 +4,13 @@ import numpy as np
 import pandas as pd
 from analysis import add_indicators
 
-STRATEGIES = {\n    "SMA trend filter": "sma",\n    "RSI momentum filter": "rsi",\n    "MACD momentum filter": "macd",\n    "20-candle breakout filter": "breakout",\n    "RSI mean-reversion filter": "mean_reversion",\n}
+STRATEGIES = {
+    "SMA trend filter": "sma",
+    "RSI momentum filter": "rsi",
+    "MACD momentum filter": "macd",
+    "20-candle breakout filter": "breakout",
+    "RSI mean-reversion filter": "mean_reversion",
+}
 
 
 def _prepare(frame, strategy):
