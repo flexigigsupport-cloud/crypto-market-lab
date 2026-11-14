@@ -15,7 +15,7 @@ with st.sidebar:
     st.header("Market")
     product = st.selectbox("Asset", PRODUCTS)
     timeframe = st.selectbox("Chart timeframe", list(TIMEFRAMES.keys()), index=1)
-    candle_count = st.slider("Historical candles", 100, 3000, 1200, 100)
+    candle_count = st.slider("Historical candles", 100, 5000, 1200, 100)
     refresh = st.button("Refresh market data", type="primary")
 
 if "market_frame" not in st.session_state:
@@ -121,5 +121,94 @@ if comparison:
     st.metric("Overall timeframe picture", result["overall"])
     st.caption(result["note"])
     st.dataframe([{"Timeframe": name, "Assessment": item["label"], "Score": item["score"], "Patterns": ", ".join(item["patterns"])} for name, item in result["reports"].items()], use_container_width=True, hide_index=True)
+
+
+st.divider()
+st.subheader("One-click market research")
+st.caption("Creates an educational snapshot from the five available timeframes. It ranks the direction of the evidence; it does not issue a buy/sell instruction or calculate a validated probability.")
+if st.button("Analyse market now", type="primary", use_container_width=True):
+    try:
+        with st.spinner("Comparing completed candles across all five timeframes..."):
+            snapshot_frames = {
+                name: fetch_candles(product, name, 120)
+                for name in TIMEFRAMES
+            }
+            snapshot = compare_timeframes(snapshot_frames)
+            reports = snapshot["reports"]
+            total_score = sum(item["score"] for item in reports.values())
+            bullish_count = snapshot["bullish_count"]
+            bearish_count = snapshot["bearish_count"]
+            if total_score >= 3 and bullish_count > bearish_count:
+                direction = "Bullish evidence leads"
+            elif total_score <= -3 and bearish_count > bullish_count:
+                direction = "Bearish evidence leads"
+            else:
+                direction = "No clear directional agreement"
+            strongest = max(reports.items(), key=lambda pair: abs(pair[1]["score"]))
+            record = {
+                "checked_at": pd.Timestamp.now(tz="UTC").strftime("%Y-%m-%d %H:%M UTC"),
+                "asset": product,
+                "direction": direction,
+                "evidence_total": total_score,
+                "bullish_timeframes": bullish_count,
+                "bearish_timeframes": bearish_count,
+                "mixed_timeframes": snapshot["mixed_count"],
+                "strongest_timeframe": strongest[0],
+                "timeframe_results": ", ".join(
+                    f"{name}: {item['label']} ({item['score']:+d})"
+                    for name, item in reports.items()
+                ),
+            }
+            history = st.session_state.get("assessment_history", [])
+            history.insert(0, record)
+            st.session_state.assessment_history = history[:20]
+            st.session_state.latest_snapshot = snapshot
+    except (MarketDataError, ValueError) as exc:
+        st.error(f"Could not complete the assessment: {exc}")
+
+if st.session_state.get("latest_snapshot"):
+    snapshot = st.session_state.latest_snapshot
+    reports = snapshot["reports"]
+    record = st.session_state.assessment_history[0]
+    st.markdown(f"### {record['direction']}")
+    a, b, c, d = st.columns(4)
+    a.metric("Combined evidence", f"{record['evidence_total']:+d} / 15")
+    b.metric("Bullish timeframes", str(record["bullish_timeframes"]))
+    c.metric("Bearish timeframes", str(record["bearish_timeframes"]))
+    d.metric("Mixed timeframes", str(record["mixed_timeframes"]))
+    st.caption(f"Strongest single-timeframe evidence: {record['strongest_timeframe']} · Checked {record['checked_at']}")
+    st.dataframe([
+        {"Timeframe": name, "Assessment": item["label"], "Evidence score": item["score"], "Patterns": ", ".join(item["patterns"])}
+        for name, item in reports.items()
+    ], use_container_width=True, hide_index=True)
+    st.info(snapshot["note"])
+    st.warning("The combined score is a simple count of indicator agreement, not a probability of a profitable outcome. Do not use it as an instruction to buy, sell or use leverage.")
+
+if st.session_state.get("assessment_history"):
+    st.subheader("Last 20 assessment records")
+    st.dataframe(st.session_state.assessment_history, use_container_width=True, hide_index=True)
+    st.caption("These records are kept in this app session. They are not permanently stored and may reset when the app restarts.")
+
+st.divider()
+st.subheader("Long-range historical market context")
+st.write("Load up to 5,000 completed daily candles for the selected asset. This gives a long-range view where the exchange has data; it does not guarantee 10–20 years of coverage.")
+if st.button("Load maximum available daily history"):
+    try:
+        with st.spinner("Retrieving up to 5,000 daily candles..."):
+            long_history = fetch_candles_history(product, "1d", 5000)
+            st.session_state.long_history = long_history
+    except (MarketDataError, ValueError) as exc:
+        st.error(str(exc))
+if st.session_state.get("long_history") is not None:
+    long_history = st.session_state.long_history
+    first_date = long_history.index.min()
+    last_date = long_history.index.max()
+    years = (last_date - first_date).days / 365.25
+    st.metric("Actual daily-history coverage", f"{years:.1f} years")
+    st.caption(f"{len(long_history):,} completed daily candles · {first_date.strftime('%Y-%m-%d')} to {last_date.strftime('%Y-%m-%d')} UTC. Coverage depends on the asset's listing date and Coinbase data availability.")
+    history_fig = go.Figure()
+    history_fig.add_trace(go.Scatter(x=long_history.index, y=long_history["close"], name="Daily close"))
+    history_fig.update_layout(height=360, xaxis_title="Date", yaxis_title="Price (USD)")
+    st.plotly_chart(history_fig, use_container_width=True)
 
 st.caption(f"Last completed candle: {frame.index[-1].strftime('%Y-%m-%d %H:%M UTC')} · Coinbase public market data.")
