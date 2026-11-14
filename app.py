@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from analysis import compare_timeframes, educational_assessment
+from backtest import STRATEGIES, run_backtest
 from market_data import (
     MarketDataError,
     PRODUCTS,
@@ -17,8 +18,8 @@ st.title("Crypto Market Lab")
 st.caption("Public crypto market data • Candlestick research • Multi-timeframe comparison")
 
 st.warning(
-    "Educational research only. Assessments are uncertain summaries, not buy/sell "
-    "instructions. No trading accounts or order execution are connected."
+    "Educational research and historical simulation only. Assessments are uncertain "
+    "summaries, not buy/sell instructions. No trading accounts or order execution are connected."
 )
 
 with st.sidebar:
@@ -49,22 +50,15 @@ latest = indicators.iloc[-1]
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Latest close", f"${latest['close']:,.4f}")
-col2.metric(
-    "RSI (14)",
-    "—" if pd.isna(latest["rsi_14"]) else f"{latest['rsi_14']:.1f}",
-)
+col2.metric("RSI (14)", "—" if pd.isna(latest["rsi_14"]) else f"{latest['rsi_14']:.1f}")
 col3.metric("Research assessment", report["label"])
 col4.metric("Evidence score", f"{report['score']:+d} / 3")
 
 st.subheader(f"{product} · {timeframe}")
 chart = go.Figure()
 chart.add_trace(go.Candlestick(
-    x=frame.index,
-    open=frame["open"],
-    high=frame["high"],
-    low=frame["low"],
-    close=frame["close"],
-    name="OHLC",
+    x=frame.index, open=frame["open"], high=frame["high"],
+    low=frame["low"], close=frame["close"], name="OHLC",
 ))
 chart.add_trace(go.Scatter(x=indicators.index, y=indicators["sma_20"], name="SMA 20"))
 chart.add_trace(go.Scatter(x=indicators.index, y=indicators["sma_50"], name="SMA 50"))
@@ -92,6 +86,49 @@ st.line_chart(indicators[["macd", "macd_signal"]].dropna(), height=180)
 st.line_chart(indicators[["atr_14"]].dropna(), height=150)
 
 st.divider()
+st.subheader("Historical paper backtest")
+st.write(
+    "This section replays simple, predefined research rules on the candles loaded above. "
+    "It uses close-to-next-candle returns and deducts the assumed costs below. "
+    "It does not create live alerts or trading instructions."
+)
+with st.expander("Simulation assumptions", expanded=True):
+    chosen_strategy = st.selectbox("Research rule", list(STRATEGIES.keys()))
+    fee_bps = st.number_input("Assumed fee per position change (basis points)", min_value=0.0, max_value=500.0, value=10.0, step=1.0)
+    slippage_bps = st.number_input("Assumed slippage per position change (basis points)", min_value=0.0, max_value=500.0, value=5.0, step=1.0)
+    run_simulation = st.button("Run historical simulation")
+
+if run_simulation:
+    try:
+        st.session_state.backtest_result = run_backtest(
+            frame, strategy=chosen_strategy, fee_bps=fee_bps, slippage_bps=slippage_bps
+        )
+    except ValueError as exc:
+        st.error(str(exc))
+
+backtest_result = st.session_state.get("backtest_result")
+if backtest_result:
+    st.caption(f"Last simulation: {backtest_result['strategy']} · {backtest_result['candles_tested']} return periods")
+    metrics = st.columns(4)
+    metrics[0].metric("Simulated return", f"{backtest_result['total_return_pct']:.2f}%")
+    metrics[1].metric("Buy-and-hold comparison", f"{backtest_result['buy_hold_return_pct']:.2f}%")
+    metrics[2].metric("Maximum drawdown", f"{backtest_result['max_drawdown_pct']:.2f}%")
+    metrics[3].metric("Position changes", str(backtest_result["position_changes"]))
+    st.line_chart(backtest_result["equity_curve"], height=280)
+    st.write({
+        "Positive periods": f"{backtest_result['positive_periods_pct']:.1f}%",
+        "Time with simulated exposure": f"{backtest_result['time_in_market_pct']:.1f}%",
+        "Assumed fee": f"{backtest_result['assumed_fee_bps']:.1f} bps",
+        "Assumed slippage": f"{backtest_result['assumed_slippage_bps']:.1f} bps",
+    })
+    st.info(backtest_result["note"])
+    st.warning(
+        "A favourable historical result can be caused by chance, overfitting or the selected "
+        "date range. This small sample is not an out-of-sample validation and says nothing "
+        "reliable about future performance."
+    )
+
+st.divider()
 st.subheader("Multi-timeframe research")
 st.write(
     "Compare the same asset across 5m, 15m, 1h, 6h and 1d. "
@@ -103,8 +140,7 @@ if st.button("Compare all timeframes"):
         with st.spinner("Loading each timeframe..."):
             for name in TIMEFRAMES:
                 timeframe_frames[name] = fetch_candles(product, name, 120)
-        comparison = compare_timeframes(timeframe_frames)
-        st.session_state.timeframe_comparison = comparison
+        st.session_state.timeframe_comparison = compare_timeframes(timeframe_frames)
     except (MarketDataError, ValueError) as exc:
         st.error(f"Could not complete timeframe comparison: {exc}")
 
@@ -112,14 +148,12 @@ comparison = st.session_state.get("timeframe_comparison")
 if comparison:
     st.metric("Overall timeframe picture", comparison["overall"])
     st.caption(comparison["note"])
-    rows = []
-    for name, item in comparison["reports"].items():
-        rows.append({
-            "Timeframe": name,
-            "Assessment": item["label"],
-            "Evidence score": item["score"],
-            "Latest patterns": ", ".join(item["patterns"]),
-        })
+    rows = [{
+        "Timeframe": name,
+        "Assessment": item["label"],
+        "Evidence score": item["score"],
+        "Latest patterns": ", ".join(item["patterns"]),
+    } for name, item in comparison["reports"].items()]
     st.dataframe(rows, use_container_width=True, hide_index=True)
 
 st.caption(
