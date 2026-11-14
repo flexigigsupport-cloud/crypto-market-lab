@@ -1,30 +1,29 @@
 # Crypto Market Lab
 
-A personal **educational cryptocurrency market research dashboard**. It retrieves public market candles, calculates technical indicators, recognises candlestick formations, compares timeframes and runs historical paper simulations.
+A personal **educational cryptocurrency market research dashboard** using public market data, technical indicators, candlestick observations, timeframe comparisons and historical paper simulations.
 
-> **Research and simulation only.** This project does not connect to exchange accounts, place orders, or provide personalised financial advice. Assessments and historical results are uncertain research outputs, not instructions to trade or promises about future performance.
+> **Research and simulation only.** No exchange accounts, order execution or personalised financial advice. Assessments and historical results are uncertain and are not trading instructions or promises.
 
-## Current features
+## Features
 
 - Public BTC-USD, ETH-USD and SOL-USD candles from Coinbase Exchange.
-- Timeframes: 5 minutes, 15 minutes, 1 hour, 6 hours and 1 day.
-- SMA 20 / SMA 50, RSI 14, MACD and ATR 14.
-- Rule-based observations for common single- and multi-candle patterns.
-- Transparent educational evidence score and multi-timeframe comparison.
-- Historical paper backtest for two simple research rules: SMA trend filter and RSI momentum filter.
-- Assumed fees and slippage are deducted on position changes.
-- Equity curve, buy-and-hold comparison, maximum drawdown, exposure and position-change count.
-- Unit tests for indicators, patterns, timeframe comparison and backtest validation.
+- 5m, 15m, 1h, 6h and 1d timeframes.
+- SMA 20/50, RSI 14, MACD and ATR 14.
+- Rule-based candlestick observations and multi-timeframe comparison.
+- Historical long/flat paper simulations for an SMA trend filter and RSI momentum filter.
+- Assumed fees and slippage deducted on position turnover.
+- Equity curve, buy-and-hold comparison, maximum drawdown, exposure and position-change metrics.
+- Chronological holdout evaluation: earlier candles warm up indicators; only the later segment contributes to reported performance.
 
 ## Backtest methodology and limitations
 
-- A signal calculated using candle t is applied to candle t+1's return, avoiding same-candle lookahead.
-- Simulated exposure is long/flat; no orders are sent anywhere.
-- The simplified model deducts the configured fee and slippage assumptions on each unit of position turnover.
-- It does not model order-book depth, liquidity, partial fills, funding, taxes, outages or all real-world costs.
-- Results depend heavily on the selected asset, timeframe, date range and assumptions.
-- The current dashboard sample is small and is not out-of-sample validation. No parameters have been optimised or validated for predictive power.
-- Historical results do not forecast future performance. Avoid selecting a rule merely because it looks best on this sample.
+- A signal calculated at candle t is applied to candle t+1's return.
+- The final chronological portion is held out from reported metrics; the default is 30%, configurable from 10% to 50%.
+- The holdout boundary is treated as a fresh paper portfolio, with entry cost charged when exposed.
+- The model is long/flat and simplified. It does not model order-book depth, liquidity, partial fills, funding, taxes or every real-world cost.
+- A single holdout is not repeated walk-forward validation. The currently available data request is capped at 300 candles, so conclusions from it are especially limited.
+- A rule can look successful by chance or overfitting. Do not optimise repeatedly against the holdout and then treat it as independent evidence.
+- Historical results do not predict future performance.
 
 ## Run locally
 
@@ -36,7 +35,6 @@ python -m venv .venv
 .venv\\Scripts\\activate
 # macOS/Linux:
 source .venv/bin/activate
-
 pip install -r requirements.txt
 streamlit run app.py
 ```
@@ -49,22 +47,12 @@ pytest -q
 
 ## Data source
 
-The app uses Coinbase Exchange's public candles endpoint:
+Coinbase Exchange public candles endpoint:
 `https://api.exchange.coinbase.com/products/{product_id}/candles`
 
-The application filters out the currently forming candle before analysis. Public endpoints can have rate limits, temporary outages, and product/region availability differences. The dashboard refreshes on request; it is not a tick-by-tick WebSocket terminal.
+The app excludes the currently forming candle. Public endpoints may have rate limits, outages and regional/product availability differences. Refresh is user-triggered, not tick-by-tick.
 
-## Roadmap
+## Security
 
-1. Validate indicator calculations and market-data handling.
-2. Expand and test candlestick pattern recognition.
-3. Compare multiple timeframes.
-4. Add historical paper backtesting with explicit cost assumptions.
-5. Improve validation with longer historical datasets and chronological out-of-sample testing.
-6. Add more read-only market-data providers and market-regime research.
-
-## Safety and security
-
-- Never commit API secrets, passwords, exchange credentials or private keys.
+- Never commit passwords, API secrets, exchange credentials or private keys.
 - Do not add live order execution or trading-account integration.
-- Treat every assessment and simulation as uncertain research output.
