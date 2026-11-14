@@ -216,3 +216,120 @@ def compare_timeframes(frames: dict[str, pd.DataFrame]) -> dict:
         "reports": reports,
         "note": "Timeframe agreement is not proof of predictive power; each timeframe uses the same simple, uncalibrated indicators.",
     }
+
+
+def strategy_consensus_research(frame: pd.DataFrame) -> dict:
+    """Combine distinct descriptive research lenses; never emits trade instructions."""
+    data = add_indicators(frame)
+    if len(data) < 60:
+        raise ValueError("At least 60 completed candles are required for strategy-consensus research.")
+
+    latest = data.iloc[-1]
+    previous = data.iloc[-2]
+    lenses: list[dict[str, str]] = []
+
+    # Trend lens: moving-average structure and recent close location.
+    if pd.notna(latest["sma_20"]) and pd.notna(latest["sma_50"]):
+        if latest["sma_20"] > latest["sma_50"] and latest["close"] > latest["sma_20"]:
+            bias, reason = "Bullish", "Close is above SMA 20 and SMA 20 is above SMA 50."
+        elif latest["sma_20"] < latest["sma_50"] and latest["close"] < latest["sma_20"]:
+            bias, reason = "Bearish", "Close is below SMA 20 and SMA 20 is below SMA 50."
+        else:
+            bias, reason = "Neutral", "Moving averages and close do not form a fully aligned trend."
+        lenses.append({"strategy": "Trend structure", "bias": bias, "reason": reason})
+
+    # Momentum lens.
+    rsi = latest["rsi_14"]
+    if pd.notna(rsi):
+        if rsi >= 55:
+            bias, reason = "Bullish", f"RSI is {rsi:.1f}, above the neutral momentum band."
+        elif rsi <= 45:
+            bias, reason = "Bearish", f"RSI is {rsi:.1f}, below the neutral momentum band."
+        else:
+            bias, reason = "Neutral", f"RSI is {rsi:.1f}, within the middle momentum band."
+        lenses.append({"strategy": "RSI momentum", "bias": bias, "reason": reason})
+
+    # MACD lens.
+    if pd.notna(latest["macd_histogram"]):
+        if latest["macd_histogram"] > 0 and latest["macd_histogram"] >= previous["macd_histogram"]:
+            bias, reason = "Bullish", "MACD histogram is positive and has not contracted on the latest candle."
+        elif latest["macd_histogram"] < 0 and latest["macd_histogram"] <= previous["macd_histogram"]:
+            bias, reason = "Bearish", "MACD histogram is negative and has not improved on the latest candle."
+        else:
+            bias, reason = "Neutral", "MACD histogram is mixed or changing direction."
+        lenses.append({"strategy": "MACD momentum", "bias": bias, "reason": reason})
+
+    # Candle lens: only directional named patterns are counted.
+    patterns = detect_latest_patterns(frame)
+    bullish_terms = ("Bullish engulfing", "Piercing-line", "Morning-star", "Three advancing")
+    bearish_terms = ("Bearish engulfing", "Dark-cloud", "Evening-star", "Three declining")
+    bullish_pattern = any(any(term in pattern for term in bullish_terms) for pattern in patterns)
+    bearish_pattern = any(any(term in pattern for term in bearish_terms) for pattern in patterns)
+    if bullish_pattern and not bearish_pattern:
+        candle_bias = "Bullish"
+        candle_reason = "A bullish reversal/continuation formation was detected; context still matters."
+    elif bearish_pattern and not bullish_pattern:
+        candle_bias = "Bearish"
+        candle_reason = "A bearish reversal/continuation formation was detected; context still matters."
+    else:
+        candle_bias = "Neutral"
+        candle_reason = "No unambiguous directional pattern was detected in the latest candle sequence."
+    lenses.append({"strategy": "Candlestick structure", "bias": candle_bias, "reason": candle_reason})
+
+    # Volume lens: relative activity only, not direction by itself.
+    if "volume" in data.columns and data["volume"].notna().sum() >= 20:
+        volume_median = data["volume"].tail(20).median()
+        if pd.notna(volume_median) and volume_median > 0:
+            volume_ratio = latest["volume"] / volume_median
+            if volume_ratio >= 1.5 and latest["close"] > latest["open"]:
+                bias, reason = "Bullish", f"Latest up-candle volume is {volume_ratio:.2f}× its 20-candle median."
+            elif volume_ratio >= 1.5 and latest["close"] < latest["open"]:
+                bias, reason = "Bearish", f"Latest down-candle volume is {volume_ratio:.2f}× its 20-candle median."
+            else:
+                bias, reason = "Neutral", f"Latest volume is {volume_ratio:.2f}× its 20-candle median; no strong directional confirmation."
+            lenses.append({"strategy": "Relative volume", "bias": bias, "reason": reason})
+
+    # Volatility is deliberately a context lens, not a directional vote.
+    atr = latest["atr_14"]
+    if pd.notna(atr) and latest["close"] != 0:
+        atr_pct = float(atr / latest["close"] * 100)
+        atr_median = data["atr_14"].tail(100).median()
+        if pd.notna(atr_median) and atr_median > 0:
+            regime = "elevated" if atr > atr_median * 1.25 else "compressed" if atr < atr_median * 0.75 else "typical"
+        else:
+            regime = "not yet classified"
+        lenses.append({
+            "strategy": "Volatility context",
+            "bias": "Context",
+            "reason": f"ATR(14) is {atr_pct:.2f}% of close; recent volatility is {regime} versus its trailing sample.",
+        })
+
+    directional = [item["bias"] for item in lenses if item["bias"] in ("Bullish", "Bearish", "Neutral")]
+    bullish = directional.count("Bullish")
+    bearish = directional.count("Bearish")
+    neutral = directional.count("Neutral")
+    if bullish > bearish and bullish >= 2:
+        overall = "Bullish evidence leads"
+    elif bearish > bullish and bearish >= 2:
+        overall = "Bearish evidence leads"
+    else:
+        overall = "Mixed / no clear consensus"
+
+    # A rolling historical range is context only, not a projected target.
+    history = data.tail(50)
+    range_context = {
+        "lookback_candles": len(history),
+        "observed_low": float(history["low"].min()),
+        "observed_high": float(history["high"].max()),
+        "latest_close": float(latest["close"]),
+    }
+    return {
+        "overall": overall,
+        "bullish_lenses": bullish,
+        "bearish_lenses": bearish,
+        "neutral_lenses": neutral,
+        "lenses": lenses,
+        "patterns": patterns,
+        "historical_range_context": range_context,
+        "note": "Lens counts are descriptive, not probabilities. The lenses are correlated and are not independently validated. The 50-candle high/low are historical observations, not entry, stop or take-profit levels.",
+    }
