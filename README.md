@@ -9,6 +9,8 @@ Personal, read-only educational cryptocurrency market research dashboard.
 - 5m, 15m, 1h, 6h and 1d timeframes.
 - Paginated retrieval of up to 5,000 historical candles (provider responses capped at 300 per request).
 - SMA 20/50, RSI 14, MACD and ATR 14; rule-based candlestick observations.
+- One-click multi-timeframe educational assessment with a session-only history of the last 20 snapshots.
+- Up to 5,000 daily candles for long-range context, subject to actual exchange history and asset listing date.
 - Multi-timeframe evidence comparison.
 - Fixed SMA and RSI long/flat paper simulations with assumed fees and slippage.
 - Single chronological holdout and sequential walk-forward evaluation.
@@ -17,7 +19,8 @@ Personal, read-only educational cryptocurrency market research dashboard.
 - Signals calculated at candle t apply to candle t+1 returns.
 - Walk-forward testing uses an initial history segment followed by later sequential test folds. Rules are fixed; no tuning occurs on the test folds.
 - Simplified model: no order-book depth, liquidity, partial fills, funding, taxes or every real-world cost.
-- Data availability and API rate limits can affect historical coverage. Check the displayed date range.
+- Data availability and API rate limits can affect historical coverage. Check the displayed date range. A 5,000-candle daily request is roughly 13.7 years at most, and newer assets have shorter histories; 10–20 years cannot be promised for every asset.
+- The one-click combined evidence score is not a calibrated probability, a buy/sell signal, or a forecast. Snapshot history is held only in the current Streamlit session and may reset.
 - Walk-forward validation does not prove predictive power. Past results do not forecast future performance.
 
 ## Run locally
