@@ -6,10 +6,94 @@ from analysis import compare_timeframes, educational_assessment, strategy_consen
 from backtest import STRATEGIES, compare_strategy_history, run_backtest, run_walk_forward
 from market_data import MarketDataError, PRODUCTS, TIMEFRAMES, fetch_candles, fetch_candles_history
 
-st.set_page_config(page_title="Crypto Market Lab", page_icon="📊", layout="wide")
-st.title("Crypto Market Lab")
-st.caption("Read-only public market data · Candlestick research · Historical paper simulations")
-st.warning("Educational research only. No exchange accounts, deposits, live orders or execution are connected. Outputs are uncertain and are not trading instructions.")
+st.set_page_config(page_title="Crypto Market Lab", page_icon="📈", layout="wide")
+
+# A restrained research-terminal visual system: typography, spacing and hierarchy
+# are intentionally quiet so the market data remains the focus.
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap');
+:root {
+  --ink: #17232d; --muted: #697782; --line: #e3e8e8;
+  --paper: #f6f7f5; --surface: #ffffff; --accent: #176b61;
+}
+html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
+.stApp { background: var(--paper); color: var(--ink); }
+.block-container { max-width: 1500px; padding-top: 2.1rem; padding-bottom: 3rem; }
+[data-testid="stHeader"] { background: transparent; }
+[data-testid="stToolbar"] { right: 1rem; }
+h1, h2, h3 { color: var(--ink); letter-spacing: -0.035em; }
+h1 { font-size: 2.05rem !important; font-weight: 700 !important; }
+h2 { font-size: 1.28rem !important; font-weight: 650 !important; margin-top: 1.2rem !important; }
+h3 { font-size: 1.02rem !important; font-weight: 650 !important; }
+p, li, label { color: #43515b; }
+[data-testid="stMetric"] {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 9px; padding: 15px 17px; min-height: 102px;
+}
+[data-testid="stMetricLabel"] p {
+  color: var(--muted); font-size: .76rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .065em;
+}
+[data-testid="stMetricValue"] { color: var(--ink); font-family: 'DM Mono', monospace; font-size: 1.35rem; }
+[data-testid="stMetricDelta"] { font-family: 'DM Mono', monospace; }
+[data-testid="stVerticalBlockBorderWrapper"] > div {
+  border-color: var(--line) !important; border-radius: 9px !important;
+}
+[data-testid="stPlotlyChart"], [data-testid="stDataFrame"] {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: 9px; padding: 7px;
+}
+.stButton > button {
+  border-radius: 6px; border: 1px solid #cbd5d3; min-height: 2.55rem;
+  font-weight: 600; letter-spacing: .005em; transition: all .15s ease;
+}
+.stButton > button[kind="primary"] {
+  background: var(--accent); border-color: var(--accent); color: white;
+}
+.stButton > button:hover { border-color: var(--accent); color: var(--accent); }
+.stButton > button[kind="primary"]:hover { background: #10564e; color: white; }
+[data-testid="stSidebar"] { background: #eef1ef; border-right: 1px solid var(--line); }
+[data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 { letter-spacing: -.02em; }
+[data-testid="stExpander"] { border: 1px solid var(--line); border-radius: 8px; background: white; }
+.stAlert { border-radius: 8px; }
+hr { border-color: var(--line) !important; margin: 2rem 0 !important; }
+small, .stCaption { color: var(--muted) !important; }
+[data-testid="stDataFrame"] * { font-variant-numeric: tabular-nums; }
+@media (max-width: 760px) {
+  .block-container { padding: 1.1rem 1rem 2rem; }
+  h1 { font-size: 1.65rem !important; }
+  [data-testid="stMetric"] { padding: 12px; min-height: 90px; }
+  [data-testid="stMetricValue"] { font-size: 1.08rem; }
+}
+</style>
+<div style="display:flex;align-items:center;justify-content:space-between;gap:16px;
+            padding:0 0 18px;border-bottom:1px solid #e3e8e8;margin-bottom:24px;">
+  <div style="display:flex;align-items:center;gap:12px;">
+    <div style="width:36px;height:36px;border-radius:8px;background:#176b61;
+                display:flex;align-items:center;justify-content:center;color:white;
+                font-size:18px;font-weight:700;">C</div>
+    <div>
+      <div style="font-size:17px;font-weight:700;letter-spacing:-.04em;color:#17232d;">Crypto Market Lab</div>
+      <div style="font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:#697782;">Independent market research</div>
+    </div>
+  </div>
+  <div style="font:11px 'DM Mono',monospace;color:#176b61;background:#e7f0ed;
+              border:1px solid #d5e5df;border-radius:20px;padding:7px 11px;">
+    PUBLIC DATA · READ ONLY
+  </div>
+</div>
+<div style="margin:0 0 18px;">
+  <div style="font-size:12px;text-transform:uppercase;letter-spacing:.12em;
+              color:#176b61;font-weight:700;margin-bottom:7px;">Market overview</div>
+  <div style="font-size:29px;line-height:1.15;letter-spacing:-.045em;
+              font-weight:700;color:#17232d;">A clearer view of the market.</div>
+  <div style="font-size:14px;color:#697782;margin-top:7px;">
+    Price structure, indicator context and historical strategy research — in one workspace.
+  </div>
+</div>
+""", unsafe_allow_html=True)
+st.info("Research environment only. This workspace uses public market data and historical paper simulations. It does not connect to exchange accounts or place orders. Findings are uncertain and are not trading instructions.")
 
 with st.sidebar:
     st.header("Market")
